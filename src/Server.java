@@ -39,7 +39,7 @@ import java.util.*;
                     if(clientId!=requesterId) {
                         InetSocketAddress clientSocketAddress = clients.get(clientId);
                         //clientsMessage.append(clientId).append(": ").append(clientSocketAddress.toString()).append("\n");
-                        clientsMessage.append(clientId).append("\n");
+                        clientsMessage.append("Client "+clientId).append("\n");
                     }
                 }
                 sendData = clientsMessage.toString().getBytes();
