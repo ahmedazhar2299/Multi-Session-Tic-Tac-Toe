@@ -37,7 +37,7 @@ import java.util.*;
                 StringBuilder clientsMessage = new StringBuilder();
                 for (int clientId : clients.keySet()) {
                     if(clientId!=requesterId) {
-                        InetSocketAddress clientSocketAddress = clients.get(clientId);
+                        //InetSocketAddress clientSocketAddress = clients.get(clientId);
                         //clientsMessage.append(clientId).append(": ").append(clientSocketAddress.toString()).append("\n");
                         clientsMessage.append("Client "+clientId).append("\n");
                     }
@@ -46,7 +46,7 @@ import java.util.*;
                 DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, clientAddress, clientPort);
                 serverSocket.send(sendPacket);
 
-                System.out.println("Sent list of active clients to client at " + clientAddress + ":" + clientPort);
+                //System.out.println("Sent list of active clients to client at " + clientAddress + ":" + clientPort);
             } else if (message.startsWith("Disconnect client")) {
                 int clientId = Integer.parseInt(message.split(" ")[2]);
                 clients.remove(clientId);
@@ -63,12 +63,13 @@ import java.util.*;
                 serverSocket.send(sendPacket);
             }
             else if (message.startsWith("Challenge accepted")) {
-                int acceptorId =  Integer.parseInt(message.split(":")[1]);
-                int challengerId =  Integer.parseInt(message.split(":")[2]);
+                int challengerId =  Integer.parseInt(message.split(":")[1]);
+                int acceptorId =  Integer.parseInt(message.split(":")[2]);
                 InetSocketAddress challengerSocketAddress = clients.get(challengerId);
+                InetSocketAddress acceptorSocketAddress = clients.get(acceptorId);
                 String idMessage = challengerSocketAddress.getAddress() + "//" + challengerSocketAddress.getPort();
                 sendData = idMessage.getBytes();
-                DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, clientAddress, clientPort);
+                DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, acceptorSocketAddress.getAddress(), acceptorSocketAddress.getPort());
                 serverSocket.send(sendPacket);
                 clients.remove(acceptorId);
                 clients.remove(challengerId);

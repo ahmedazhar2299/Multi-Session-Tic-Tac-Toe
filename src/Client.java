@@ -5,6 +5,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 class Person {
@@ -29,23 +30,23 @@ class ClientUDP{
     private static Person p;
     private static DatagramPacket packet;
     private static DatagramSocket socket;
+    private static InetSocketAddress challengerSocketAddress=null;
 
     ClientUDP(){
         p = new Person();
     }
 
-    public void intializeConnection() throws Exception{
+    public void initializeConnection() throws Exception{
         socket = new DatagramSocket();
         socket.setSoTimeout(2000);
         byte[] buffer = new byte[1024];
-        DatagramPacket receivePacket;
         packet = new DatagramPacket(buffer, buffer.length);
         packet.setAddress(InetAddress.getByName("localhost"));
         packet.setPort(9876);
     }
 
 
-    public void getClientID() throws IOException {
+    public int getClientID() throws IOException {
         String message = "Request client ID";
         messageSender(message);
 
@@ -54,14 +55,12 @@ class ClientUDP{
         int clientId = Integer.parseInt(message.split(" ")[4]);
         p.setID(clientId);
         System.out.println("Received client ID: " + clientId);
-
-
+        return clientId;
     }
 
     public String[] getActiveClientsList() throws IOException {
         String message = "Request active clients:"+p.getID();
         messageSender(message);
-        // receive list of active clients
         message = messageReceiver();
         String[] clientIds = message.split("\n");
        // System.out.println("Active clients:\n" + String.join("\n", clientIds));
@@ -79,11 +78,12 @@ class ClientUDP{
     }
 
     public void acceptChallenge(int challengerId) throws Exception {
-            messageSender("Challenge accepted:"+challengerId+":"+p.getID());
-            String message = messageReceiver();
-            InetAddress challengerAddress =  InetAddress.getByName(message.split("//")[0].replace("/",""));
-            int challengerPort = Integer.parseInt(message.split("//")[1]) ;
-            this.establishConnection(challengerAddress,challengerPort);
+        messageSender("Challenge accepted:"+challengerId+":"+p.getID());
+        String message = messageReceiver();
+        InetAddress challengerAddress =  InetAddress.getByName(message.split("//")[0].replace("/",""));
+        int challengerPort = Integer.parseInt(message.split("//")[1]) ;
+        challengerSocketAddress = new InetSocketAddress(challengerAddress,challengerPort);
+        this.transferP2PMessage("Initialize new connection"+ "/127.0.0.1" + "//" + socket.getLocalPort());
     }
 
     public String messageReceiver() throws IOException {
@@ -102,18 +102,23 @@ class ClientUDP{
         packet.setLength(request.length);
         socket.send(packet);
     }
+    public void setChallengerSocketAddress(InetSocketAddress socketAddress){
+        challengerSocketAddress = socketAddress;
+    }
 
-    private void establishConnection( InetAddress challengerAddress, int challengerPort) throws Exception {
+    public InetSocketAddress getChallengerSocketAddress(){
+        return challengerSocketAddress;
+    }
+
+    public void transferP2PMessage( String message) throws Exception {
 //        InetSocketAddress ownAddress = new InetSocketAddress("localhost", 9877);
 //        socket.bind(ownAddress);
-        System.out.println("Establishing connection with client at port " + challengerPort);
-        InetSocketAddress peerAddress = new InetSocketAddress(challengerAddress, challengerPort);
-        byte[] buffer = ("Connected to client ").getBytes();
-        packet = new DatagramPacket(buffer, buffer.length, peerAddress);
+        //System.out.println("Establishing connection with client at port " + peerAddress.getPort());
+        byte[] buffer = message.getBytes();
+        packet = new DatagramPacket(buffer, buffer.length, challengerSocketAddress);
         socket.send(packet);
        // socket.close();
         }
-
 }
 
 
@@ -125,24 +130,36 @@ class gameUI {
     private ClientUDP client;
 
     public gameUI() {
-
         client = new ClientUDP();
-
     }
 
-    public void messageParser(String Message){
-        if(Message.startsWith("Challenged received from")){
+    public void messageParser(String Message) throws Exception {
+        if (Message.startsWith("Challenged received from")) {
             int challengerId = Integer.parseInt(Message.split(":")[1]);
-           System.out.println( displayChallengeAcceptor(challengerId));
+           if(displayChallengeAcceptor(challengerId)){
+                client.acceptChallenge(challengerId);
+           }
+        }
+        else if(Message.startsWith("Initialize new connection")){
+            InetAddress receiverAddress = InetAddress.getByName(Message.split("/")[1].split("//")[0]);
+            int receiverPort = Integer.parseInt(Message.split("//")[1]);
+            client.setChallengerSocketAddress(new InetSocketAddress(receiverAddress,receiverPort));
+            client.transferP2PMessage("Connection established");
+            frame.dispose();
+            this.displayGrid();
+        }
+        else if (Message.startsWith("Connection established")){
+            frame.dispose();
+            this.displayGrid();
+        }
+        else {
+            System.out.println(Message);
         }
     }
 
-
     public void display() throws Exception {
-        client.intializeConnection();
-        client.getClientID();
-
-        frame = new JFrame("Multiplayer Tic Tac Toe");
+        client.initializeConnection();
+        frame = new JFrame(String.valueOf("Client" + client.getClientID()));
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(400, 300);
 
@@ -151,16 +168,15 @@ class gameUI {
 
 
         // Initialize the button and set its action listener
-        JButton button = new JButton("Select Fruit");
+        JButton button = new JButton("Send Challenge");
         JLabel label1 = new JLabel("Challenge sent!");
         label1.setForeground(Color.GREEN);
 
         button.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                // Get the selected fruit and store it in the selectedFruit variable
                 challengedClientId = clientList.getSelectedValue();
-                if(challengedClientId!=null){
+                if (challengedClientId != null) {
                     challengedClientId = challengedClientId.split(" ")[1];
                     try {
                         client.challengeClient(Integer.parseInt(challengedClientId));
@@ -170,9 +186,8 @@ class gameUI {
                 }
                 label1.setVisible(true);
 
-                // Close the current frame and display the selected fruit in a new frame
-               // frame.dispose();
-               // displaySelectedFruit();
+                // frame.dispose();
+                // displaySelectedFruit();
             }
         });
 
@@ -182,15 +197,17 @@ class gameUI {
             @Override
             public void run() {
                 try {
-                    String[] updatedClients = client.getActiveClientsList();
-                    if(clientList.getModel().getSize()!=updatedClients.length){
-                        clientList.setListData(updatedClients);
-                        clientList.revalidate();
-                        clientList.repaint();
+                    if(client.getChallengerSocketAddress()==null){
+                        String[] updatedClients = client.getActiveClientsList();
+                        if (clientList.getModel().getSize() != updatedClients.length || clientList.getModel().getSize()==1) {
+                            clientList.setListData(updatedClients);
+                            clientList.revalidate();
+                            clientList.repaint();
+                        }
+                        label1.setVisible(false);
                     }
-                    label1.setVisible(false);
                     String message = client.messageReceiver();
-                    if(message.length()>0) messageParser(message);
+                    if (message.length() > 0) messageParser(message);
                 } catch (Exception e) {
 
                 }
@@ -199,12 +216,11 @@ class gameUI {
         timer.schedule(task, 0, 2000);
 
 
-
         // Add the list and button to the frame
         frame.setLayout(new BorderLayout());
         frame.add(new JScrollPane(clientList), BorderLayout.CENTER);
         frame.add(button, BorderLayout.SOUTH);
-        frame.add(label1,BorderLayout.NORTH);
+        frame.add(label1, BorderLayout.NORTH);
 
 
         // Display the frame
@@ -213,14 +229,39 @@ class gameUI {
         frame.setResizable(false);
     }
 
-    private boolean displayChallengeAcceptor(int challengerID) {
-        // Initialize the frame for displaying the selected fruit
+    public void displayGrid() throws IOException {
+        JFrame frame1 = new JFrame("Input Frame");
+        frame1.setLayout(new FlowLayout());
+        frame1.setSize(400, 100);
+        frame1.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        JTextField inputField = new JTextField(20);
+        JButton button = new JButton("Print");
+        button.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    String text = inputField.getText();
+                    client.transferP2PMessage(text);
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+
+        frame1.add(inputField);
+        frame1.add(button);
+        frame1.setLocationRelativeTo(null);
+        frame1.setVisible(true);
+        frame1.setResizable(false);
+    }
+
+    private boolean displayChallengeAcceptor(int challengerID) throws InterruptedException {
         JFrame challengeFrame = new JFrame("Accept Challenge");
         challengeFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         challengeFrame.setSize(200, 100);
         challengeFrame.setLocationRelativeTo(null);
         challengeFrame.setResizable(false);
-        JLabel label = new JLabel("Accept Challenge From Client "+challengerID, SwingConstants.CENTER);
+        JLabel label = new JLabel("Accept Challenge From Client " + challengerID, SwingConstants.CENTER);
         challengeFrame.add(label, BorderLayout.CENTER);
         JPanel buttonPanel = new JPanel(new GridLayout(1, 2, 10, 0));
         JButton yesButton = new JButton("Yes");
@@ -229,12 +270,13 @@ class gameUI {
         buttonPanel.add(noButton);
         challengeFrame.add(buttonPanel, BorderLayout.SOUTH);
         AtomicBoolean acceptFlag = new AtomicBoolean(false);
+        CountDownLatch latch = new CountDownLatch(1);
 
         yesButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                System.out.println("Yes");
                 acceptFlag.set(true);
+                latch.countDown();
                 challengeFrame.dispose(); // Close the frame
             }
         });
@@ -242,7 +284,8 @@ class gameUI {
         noButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                System.out.println("No");
+                acceptFlag.set(false);
+                latch.countDown();
                 challengeFrame.dispose(); // Close the frame
             }
         });
@@ -252,12 +295,13 @@ class gameUI {
             public void windowClosed(WindowEvent e) {
                 super.windowClosed(e);
                 acceptFlag.set(false);
+                latch.countDown();
             }
         });
 
         // Display the frame
         challengeFrame.setVisible(true);
-
+        latch.await(); // Wait for the user to click on either the "Yes" or "No" button
         return acceptFlag.get();
     }
 }
