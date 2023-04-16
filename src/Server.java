@@ -75,8 +75,12 @@ import java.util.*;
                 clients.remove(challengerId);
                 System.out.println("Client " + acceptorId + " accepted challenge from " + challengerId);
             }
+            else if (message.startsWith("Client ")) {
+                System.out.println(message);
             }
-        }
+            }
+            }
+
 
     private static synchronized int getNextClientId() {
         return nextClientId++;

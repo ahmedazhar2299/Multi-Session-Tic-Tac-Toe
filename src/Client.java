@@ -67,6 +67,11 @@ class ClientUDP{
         return clientIds;
     }
 
+
+    public int getPersonId(){
+        return p.getID();
+    }
+
     public void disconnectClient() throws IOException {
         String message = "Disconnect client " + p.getID();
         messageSender(message);
@@ -125,9 +130,12 @@ class ClientUDP{
 class gameUI {
     private JFrame frame;
     private JList<String> clientList;
-
     private String challengedClientId;
     private ClientUDP client;
+    JButton[] buttons;
+    JLabel titleLabel, turnLabel;
+    private boolean playerTurn;
+
 
     public gameUI() {
         client = new ClientUDP();
@@ -152,8 +160,17 @@ class gameUI {
             frame.dispose();
             this.displayGrid();
         }
-        else {
-            System.out.println(Message);
+        else if(Message.startsWith("O") || Message.startsWith("X")){
+            String selectedTile = Message.split(":")[0];
+            int index = Integer.parseInt(Message.split(":")[1]);
+            buttons[index].setText(selectedTile);
+            if (selectedTile.equals("X")) {
+                turnLabel.setText("Player 2's turn");
+            } else {
+                turnLabel.setText("Player 1's turn");
+            }
+            checkWin(selectedTile);
+            setPlayerTurn(true);
         }
     }
 
@@ -185,9 +202,6 @@ class gameUI {
                     }
                 }
                 label1.setVisible(true);
-
-                // frame.dispose();
-                // displaySelectedFruit();
             }
         });
 
@@ -229,31 +243,155 @@ class gameUI {
         frame.setResizable(false);
     }
 
-    public void displayGrid() throws IOException {
-        JFrame frame1 = new JFrame("Input Frame");
-        frame1.setLayout(new FlowLayout());
-        frame1.setSize(400, 100);
+    public void displayGrid() {
+        JFrame frame1 = new JFrame("Tic Tac Toe");
         frame1.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        JTextField inputField = new JTextField(20);
-        JButton button = new JButton("Print");
-        button.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                try {
-                    String text = inputField.getText();
-                    client.transferP2PMessage(text);
-                } catch (Exception ex) {
-                    throw new RuntimeException(ex);
-                }
-            }
-        });
+        frame1.setSize(300, 300);
 
-        frame1.add(inputField);
-        frame1.add(button);
+        // Create the labels
+        titleLabel = new JLabel("Tic Tac Toe", SwingConstants.CENTER);
+        turnLabel = new JLabel("Player 1's turn", SwingConstants.CENTER);
+
+        // Create the buttons
+        buttons = new JButton[9];
+        for (int i = 0; i < buttons.length; i++) {
+            buttons[i] = new JButton("");
+            buttons[i].addActionListener(new ButtonListener(i));
+        }
+
+        // Add the components to the frame
+        frame1.add(titleLabel, BorderLayout.NORTH);
+        JPanel buttonPanel = new JPanel(new GridLayout(3, 3));
+        for (int i = 0; i < buttons.length; i++) {
+            buttonPanel.add(buttons[i]);
+        }
+        frame1.add(buttonPanel, BorderLayout.CENTER);
+        frame1.add(turnLabel, BorderLayout.SOUTH);
+
+        // Initialize the game
+        playerTurn = true;
         frame1.setLocationRelativeTo(null);
         frame1.setVisible(true);
-        frame1.setResizable(false);
     }
+
+    public void setPlayerTurn(boolean turn){
+        playerTurn =turn;
+    }
+    public void takeTurn(int index) throws Exception {
+        if(turnLabel.getText().equals("Player 1's turn")){
+            buttons[index].setText("X");
+            client.transferP2PMessage("X:"+index);
+            checkWin("X");
+            turnLabel.setText("Player 2's turn");
+        }
+        else{
+            buttons[index].setText("O");
+            client.transferP2PMessage("O:"+index);
+            checkWin("O");
+            turnLabel.setText("Player 1's turn");
+        }
+        setPlayerTurn(false);
+    }
+    private void checkWin(String player) throws IOException {
+        // Check for horizontal win
+        for (int i = 0; i < 9; i += 3) {
+            if (buttons[i].getText().equals(player) && buttons[i + 1].getText().equals(player) && buttons[i + 2].getText().equals(player)) {
+                win(player);
+                return;
+            }
+        }
+        // Check for vertical win
+        for (int i = 0; i < 3; i++) {
+            if (buttons[i].getText().equals(player) && buttons[i + 3].getText().equals(player) && buttons[i + 6].getText().equals(player)) {
+                win(player);
+                return;
+            }
+        }
+        // Check for diagonal win
+        if (buttons[0].getText().equals(player) && buttons[4].getText().equals(player) && buttons[8].getText().equals(player)) {
+            win(player);
+            return;
+        }
+        if (buttons[2].getText().equals(player) && buttons[4].getText().equals(player) && buttons[6].getText().equals(player)) {
+            win(player);
+            return;
+        }
+
+        // Check for draw
+        boolean draw = true;
+        for (int i = 0; i < 9; i++) {
+            if (buttons[i].getText().equals("")) {
+                draw = false;
+                break;
+            }
+        }
+        if (draw) {
+            draw();
+        }
+    }
+    private void win(String player) throws IOException {
+        for (int i = 0; i < 9; i++) {
+            buttons[i].setEnabled(false);
+        }
+        JOptionPane.showMessageDialog(frame, player + " wins!", "Winner", JOptionPane.INFORMATION_MESSAGE);
+        if(turnLabel.getText().equals("Player 1's turn"))
+            client.messageSender("Client " +challengedClientId+ "won against Client "+client.getPersonId());
+        else
+            client.messageSender("Client " +client.getPersonId()+ "won against Client "+challengedClientId);
+    }
+    private void draw() throws IOException {
+        JOptionPane.showMessageDialog(frame, "It's a draw!", "Draw", JOptionPane.INFORMATION_MESSAGE);
+        client.messageSender("Client " +client.getPersonId()+ "and Client "+challengedClientId +" drawn!");
+    }
+
+    private class ButtonListener implements ActionListener {
+        private int index;
+        public ButtonListener(int index) {
+            this.index = index;
+        }
+        public void actionPerformed(ActionEvent e) {
+            if (buttons[index].getText().equals("")) {
+                if (playerTurn) {
+                    try {
+                        takeTurn(index);
+                    } catch (Exception ex) {
+                        throw new RuntimeException(ex);
+                    }
+                }
+//                else {
+//                    buttons[index].setText("O");
+//                    checkWin("O");
+//                    turnLabel.setText("Client 1's turn");
+//                }
+            }
+        }
+    }
+
+//    public void displayGameGrid() throws IOException {
+//        JFrame frame1 = new JFrame("Input Frame");
+//        frame1.setLayout(new FlowLayout());
+//        frame1.setSize(400, 100);
+//        frame1.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+//        JTextField inputField = new JTextField(20);
+//        JButton button = new JButton("Print");
+//        button.addActionListener(new ActionListener() {
+//            @Override
+//            public void actionPerformed(ActionEvent e) {
+//                try {
+//                    String text = inputField.getText();
+//                    client.transferP2PMessage(text);
+//                } catch (Exception ex) {
+//                    throw new RuntimeException(ex);
+//                }
+//            }
+//        });
+//
+//        frame1.add(inputField);
+//        frame1.add(button);
+//        frame1.setLocationRelativeTo(null);
+//        frame1.setVisible(true);
+//        frame1.setResizable(false);
+//    }
 
     private boolean displayChallengeAcceptor(int challengerID) throws InterruptedException {
         JFrame challengeFrame = new JFrame("Accept Challenge");
@@ -309,15 +447,10 @@ class gameUI {
 
 public class Client {
 
-    public static void main(String[] args) throws Exception {
-//        ClientUDP c = new ClientUDP();
-//        c.intializeConnection();
-//        c.getClientID();
-//        c.getActiveClientsList();
-//        c.challengeClient(1);
-//        c.acceptChallenge();
+    public static void main(String[] args) throws Exception   {
         gameUI g = new gameUI();
         g.display();
+
 
        // c.disconnectClient();
     }
