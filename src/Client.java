@@ -26,13 +26,13 @@ class Person {
 }
 
 
-class ClientUDP{
+class Connection{
     private static Person p;
     private static DatagramPacket packet;
     private static DatagramSocket socket;
     private static InetSocketAddress challengerSocketAddress=null;
 
-    ClientUDP(){
+    Connection(){
         p = new Person();
     }
 
@@ -72,9 +72,12 @@ class ClientUDP{
         return p.getID();
     }
 
-    public void disconnectClient() throws IOException {
-        String message = "Disconnect client " + p.getID();
+    public void disconnectClient() throws Exception {
+        String message = "Disconnect client:" + p.getID();
         messageSender(message);
+        socket.close();
+    }
+    public void closeConnection(){
         socket.close();
     }
     public void challengeClient(int clientId) throws IOException {
@@ -131,14 +134,14 @@ class gameUI {
     private JFrame frame;
     private JList<String> clientList;
     private String challengedClientId;
-    private ClientUDP client;
+    private Connection client;
     JButton[] buttons;
     JLabel titleLabel, turnLabel;
     private boolean playerTurn;
 
 
     public gameUI() {
-        client = new ClientUDP();
+        client = new Connection();
     }
 
     public void messageParser(String Message) throws Exception {
@@ -174,7 +177,7 @@ class gameUI {
         }
     }
 
-    public void display() throws Exception {
+    public void displayClientList() throws Exception {
         client.initializeConnection();
         frame = new JFrame(String.valueOf("Client" + client.getClientID()));
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -202,6 +205,16 @@ class gameUI {
                     }
                 }
                 label1.setVisible(true);
+            }
+        });
+
+        frame.addWindowListener(new WindowAdapter() {
+            public void windowClosing(WindowEvent e) {
+                try {
+                    client.disconnectClient();
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
             }
         });
 
@@ -244,7 +257,7 @@ class gameUI {
     }
 
     public void displayGrid() {
-        JFrame frame1 = new JFrame("Tic Tac Toe");
+        JFrame frame1 = new JFrame("Client "+ client.getPersonId() + " Tic Tac Toe");
         frame1.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame1.setSize(300, 300);
 
@@ -252,19 +265,18 @@ class gameUI {
         titleLabel = new JLabel("Tic Tac Toe", SwingConstants.CENTER);
         turnLabel = new JLabel("Player 1's turn", SwingConstants.CENTER);
 
-        // Create the buttons
         buttons = new JButton[9];
         for (int i = 0; i < buttons.length; i++) {
             buttons[i] = new JButton("");
             buttons[i].addActionListener(new ButtonListener(i));
         }
 
-        // Add the components to the frame
         frame1.add(titleLabel, BorderLayout.NORTH);
         JPanel buttonPanel = new JPanel(new GridLayout(3, 3));
         for (int i = 0; i < buttons.length; i++) {
             buttonPanel.add(buttons[i]);
         }
+
         frame1.add(buttonPanel, BorderLayout.CENTER);
         frame1.add(turnLabel, BorderLayout.SOUTH);
 
@@ -292,7 +304,7 @@ class gameUI {
         }
         setPlayerTurn(false);
     }
-    private void checkWin(String player) throws IOException {
+    private void checkWin(String player) throws Exception {
         // Check for horizontal win
         for (int i = 0; i < 9; i += 3) {
             if (buttons[i].getText().equals(player) && buttons[i + 1].getText().equals(player) && buttons[i + 2].getText().equals(player)) {
@@ -329,19 +341,25 @@ class gameUI {
             draw();
         }
     }
-    private void win(String player) throws IOException {
+    private void win(String player) throws Exception {
+        client.initializeConnection();
         for (int i = 0; i < 9; i++) {
             buttons[i].setEnabled(false);
         }
         JOptionPane.showMessageDialog(frame, player + " wins!", "Winner", JOptionPane.INFORMATION_MESSAGE);
-        if(turnLabel.getText().equals("Player 1's turn"))
-            client.messageSender("Client " +challengedClientId+ "won against Client "+client.getPersonId());
-        else
-            client.messageSender("Client " +client.getPersonId()+ "won against Client "+challengedClientId);
+        if(playerTurn)
+            client.messageSender("Client " +client.getPersonId()+ " won!");
+        client.closeConnection();
     }
-    private void draw() throws IOException {
+    private void draw() throws Exception {
+        client.initializeConnection();
+        for (int i = 0; i < 9; i++) {
+            buttons[i].setEnabled(false);
+        }
         JOptionPane.showMessageDialog(frame, "It's a draw!", "Draw", JOptionPane.INFORMATION_MESSAGE);
-        client.messageSender("Client " +client.getPersonId()+ "and Client "+challengedClientId +" drawn!");
+        if(playerTurn)
+            client.messageSender("Client " +client.getPersonId()+ " and Client "+challengedClientId +" match drawn!");
+        client.closeConnection();
     }
 
     private class ButtonListener implements ActionListener {
@@ -358,41 +376,9 @@ class gameUI {
                         throw new RuntimeException(ex);
                     }
                 }
-//                else {
-//                    buttons[index].setText("O");
-//                    checkWin("O");
-//                    turnLabel.setText("Client 1's turn");
-//                }
             }
         }
     }
-
-//    public void displayGameGrid() throws IOException {
-//        JFrame frame1 = new JFrame("Input Frame");
-//        frame1.setLayout(new FlowLayout());
-//        frame1.setSize(400, 100);
-//        frame1.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-//        JTextField inputField = new JTextField(20);
-//        JButton button = new JButton("Print");
-//        button.addActionListener(new ActionListener() {
-//            @Override
-//            public void actionPerformed(ActionEvent e) {
-//                try {
-//                    String text = inputField.getText();
-//                    client.transferP2PMessage(text);
-//                } catch (Exception ex) {
-//                    throw new RuntimeException(ex);
-//                }
-//            }
-//        });
-//
-//        frame1.add(inputField);
-//        frame1.add(button);
-//        frame1.setLocationRelativeTo(null);
-//        frame1.setVisible(true);
-//        frame1.setResizable(false);
-//    }
-
     private boolean displayChallengeAcceptor(int challengerID) throws InterruptedException {
         JFrame challengeFrame = new JFrame("Accept Challenge");
         challengeFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -449,7 +435,7 @@ public class Client {
 
     public static void main(String[] args) throws Exception   {
         gameUI g = new gameUI();
-        g.display();
+        g.displayClientList();
 
 
        // c.disconnectClient();

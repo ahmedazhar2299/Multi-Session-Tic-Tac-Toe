@@ -37,8 +37,6 @@ import java.util.*;
                 StringBuilder clientsMessage = new StringBuilder();
                 for (int clientId : clients.keySet()) {
                     if(clientId!=requesterId) {
-                        //InetSocketAddress clientSocketAddress = clients.get(clientId);
-                        //clientsMessage.append(clientId).append(": ").append(clientSocketAddress.toString()).append("\n");
                         clientsMessage.append("Client "+clientId).append("\n");
                     }
                 }
@@ -48,9 +46,8 @@ import java.util.*;
 
                 //System.out.println("Sent list of active clients to client at " + clientAddress + ":" + clientPort);
             } else if (message.startsWith("Disconnect client")) {
-                int clientId = Integer.parseInt(message.split(" ")[2]);
+                int clientId = Integer.parseInt(message.split(":")[1]);
                 clients.remove(clientId);
-
                 System.out.println("Removed ID " + clientId + " for disconnected client at " + clientAddress + ":" + clientPort);
             }
             else if (message.startsWith("Challenge client")) {
